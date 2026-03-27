@@ -1,17 +1,26 @@
+"""Catalog index and embedding management service."""
 import os
 import numpy as np
 import faiss
 
 from sklearn.preprocessing import normalize
-from model_loader import model
-from util import build_content_string
+from ml.model_loader import model
+from utils.text import build_content_string
 
 CACHE_FILE = "./models/catalog_embeddings.npz"
 INDEX_FILE = "./models/catalog_faiss.index"
 
 
 def build_catalog_index(catalog: list):
+    """
+    Build FAISS index for movie catalog.
 
+    Creates embeddings for all movies and builds a searchable index.
+    Supports GPU acceleration if available.
+
+    Args:
+        catalog: List of movie dictionaries
+    """
     print(f"Encoding {len(catalog)} movies...")
 
     contents = [build_content_string(m) for m in catalog]
@@ -39,7 +48,7 @@ def build_catalog_index(catalog: list):
         res = faiss.StandardGpuResources()
         index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
         print("Using FAISS GPU")
-    except:
+    except Exception:
         index = cpu_index
         print("Using FAISS CPU")
 
@@ -52,12 +61,23 @@ def build_catalog_index(catalog: list):
 
 
 def load_catalog_index(catalog=None):
+    """
+    Load FAISS index and cached embeddings.
 
+    Builds the index if it doesn't exist.
+
+    Args:
+        catalog: Optional catalog to build index if not found
+
+    Returns:
+        Tuple of (faiss index, embeddings array, movie IDs list)
+
+    Raises:
+        Exception: If index not found and catalog not provided
+    """
     if not os.path.exists(INDEX_FILE):
-
         if catalog is None:
             raise Exception("Index not found. Need catalog to build.")
-
         build_catalog_index(catalog)
 
     index = faiss.read_index(INDEX_FILE)
