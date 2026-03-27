@@ -1,28 +1,22 @@
 import json
 from datetime import datetime
-from bs4 import BeautifulSoup
 
-def parse_html(html: str) -> str:
-    return BeautifulSoup(html, "html.parser").get_text(separator=" ").strip()
-
-def build_content_string(movie: dict) -> str:
-    title = movie.get("title", "")
-    original = movie.get("originalTitle", "")
-    desc = parse_html(movie.get("description", ""))
-    categories = " ".join(c["name"] for c in movie.get("categories", []))
-    country = movie.get("country", "")
-    year = str(movie.get("year", ""))
-
-    return f"{title} {original} {desc} {categories} {country} {year}"
 
 def compute_engagement_score(history_item: dict) -> float:
+    """
+    Compute engagement score based on watch behavior.
 
+    Factors:
+    - timesWatched: how many times watched (weight: 0.5)
+    - completion: how much of the movie was watched (weight: 1.0)
+    - recency: how recently was watched (weight: 0.3)
+    """
     movie_meta = history_item.get("movie", {})
 
     try:
         meta = json.loads(movie_meta.get("metadata", "{}"))
         duration = meta.get("duration", 1)
-    except:
+    except Exception:
         duration = 1
 
     times_watched = history_item.get("timesWatched", 0)
@@ -36,7 +30,7 @@ def compute_engagement_score(history_item: dict) -> float:
         modified_date = datetime.strptime(modified_str, "%d/%m/%Y %H:%M:%S")
         days_ago = (datetime.now() - modified_date).days
         recency = 1 / (1 + days_ago / 30)
-    except:
+    except Exception:
         recency = 0.5
 
     score = (
