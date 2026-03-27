@@ -2,24 +2,23 @@ import numpy as np
 import os
 from util import build_content_string
 from sklearn.preprocessing import normalize
-from sentence_transformers import SentenceTransformer
+from model_loader import model
 
 CACHE_FILE = "./models/catalog_embeddings.npz"
-
-model = SentenceTransformer("all-MiniLM-L6-v2", cache_folder="./models")
-
-def get_catalog_embeddings(candidates):
-    cache_key = str(sorted([m["id"] for m in candidates]))
-    
-    if os.path.exists(CACHE_FILE):
-        cache = np.load(CACHE_FILE, allow_pickle=True)
-        if str(cache["key"]) == cache_key:
-            print("  Cache hit — dùng embeddings đã lưu")
-            return cache["vecs"]
-    
-    print("  Cache miss — đang encode...")
-    contents = [build_content_string(m) for m in candidates]
+def build_catalog_cache(catalog: list):
+    print(f"  Encoding {len(catalog)} movies...")
+    contents = [build_content_string(m) for m in catalog]
     vecs = normalize(model.encode(contents))
-    
-    np.savez(CACHE_FILE, vecs=vecs, key=cache_key)
-    return vecs
+    ids = np.array([m["id"] for m in catalog])
+
+    np.savez(CACHE_FILE, vecs=vecs, ids=ids)
+    print(f"  Saved to {CACHE_FILE}")
+
+def load_catalog_embeddings(catalog: list = None):
+    if not os.path.exists(CACHE_FILE):
+        if catalog is None:
+            print("Cache chưa có, cần truyền catalog để build.")
+        build_catalog_cache(catalog)
+
+    cache = np.load(CACHE_FILE, allow_pickle=True)
+    return cache["vecs"], cache["ids"].tolist()
