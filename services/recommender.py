@@ -1,8 +1,5 @@
 """Recommendation service."""
-import numpy as np
-
 from services.catalog_service import load_catalog_index
-
 
 def recommend_from_history(user_vec, catalog, history_list, top_k=5):
     """
