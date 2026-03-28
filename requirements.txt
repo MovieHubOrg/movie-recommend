@@ -10,3 +10,4 @@ pydantic
 requests
 python-dotenv
 xmltodict
+pytest
