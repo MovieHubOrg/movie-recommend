@@ -1,7 +1,7 @@
 """Movie Recommendation API - FastAPI Application."""
 from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).parent / ".env")
+load_dotenv(Path(__file__).parent / ".env", override=True)
 
 from fastapi import FastAPI
 
@@ -16,8 +16,10 @@ app = FastAPI(
 # Include API routers
 app.include_router(api_router, prefix="/api/v1")
 
-
 @app.get("/")
 def hello():
     """Health check endpoint."""
     return {"message": "Hello World"}
+
+print("ENV file path:", Path(__file__).parent / ".env")
+print("File exists:", (Path(__file__).parent / ".env").exists())

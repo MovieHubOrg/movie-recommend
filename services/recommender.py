@@ -17,6 +17,8 @@ def recommend_from_history(user_vec, catalog, history_list, top_k=5):
     Returns:
         List of recommended movies with similarity scores
     """
+    if user_vec is None:
+        return []
     index, vecs, ids = load_catalog_index(catalog)
 
     watched_ids = {item["movie"]["id"] for item in history_list}

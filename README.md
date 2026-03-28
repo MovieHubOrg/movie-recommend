@@ -8,6 +8,7 @@ A content-based movie recommendation API built with FastAPI. The system recommen
 movie-recommend/
 ├── app.py                      # FastAPI application entry point
 ├── requirements.txt            # Python dependencies
+├── .env                        # Environment variables
 ├── README.md                   # This file
 │
 ├── api/                        # API layer
@@ -46,6 +47,8 @@ movie-recommend/
 
 ## How It Works
 
+The system recommends movies based on user watch history using content-based filtering:
+
 1. **Model Loading**: Loads `all-MiniLM-L6-v2` sentence transformer with GPU/CPU auto-detection
 2. **User Profile Building**:
    - Extracts movie metadata (title, description, categories, country, year)
@@ -58,7 +61,6 @@ movie-recommend/
    - `modifiedDate` - recency decay (weight: 0.3)
 4. **Catalog Index**: Pre-builds FAISS index (FlatIP) for fast inner product search
 5. **Recommendation**: Searches FAISS index for top-k similar movies, excludes watched
-6. **External API Integration**: The system proxies requests to an external movie API, handling authentication via Bearer tokens and converting XML error responses to JSON format
 
 ## External API Integration
 
@@ -97,7 +99,8 @@ source venv/bin/activate
 ### Install Dependencies
 
 ```bash
-pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121
+pip install -r requirements.txt
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
 ## Requirements
@@ -121,18 +124,18 @@ xmltodict
 
 Environment variables (optional, defaults in `core/config.py`):
 
-| Variable              | Default                     | Description                       |
-| --------------------- | --------------------------- | --------------------------------- |
-| `APP_NAME`            | Movie Recommend API        | Application title                 |
-| `DEBUG`               | False                       | Enable debug mode                 |
-| `MODEL_NAME`          | all-MiniLM-L6-v2            | Sentence transformer model        |
-| `CACHE_FOLDER`        | ./models                    | Model cache directory             |
-| `INDEX_FILE`          | ./models/catalog_faiss.index| FAISS index file path             |
-| `EMBEDDINGS_CACHE`   | ./models/catalog_embeddings.npz | Cached embeddings file       |
-| `DEFAULT_TOP_K`       | 5                           | Default number of recommendations |
-| `SEARCH_MULTIPLIER`   | 3                           | Search multiplier for retrieval   |
-| `USE_GPU`             | True                        | Enable GPU acceleration           |
-| `MOVIE_API`           | -                           | External movie API base URL       |
+| Variable            | Default                         | Description                       |
+| ------------------- | ------------------------------- | --------------------------------- |
+| `APP_NAME`          | Movie Recommend API             | Application title                 |
+| `DEBUG`             | False                           | Enable debug mode                 |
+| `MODEL_NAME`        | all-MiniLM-L6-v2                | Sentence transformer model        |
+| `CACHE_FOLDER`      | ./models                        | Model cache directory             |
+| `INDEX_FILE`        | ./models/catalog_faiss.index    | FAISS index file path             |
+| `EMBEDDINGS_CACHE`  | ./models/catalog_embeddings.npz | Cached embeddings file            |
+| `DEFAULT_TOP_K`     | 5                               | Default number of recommendations |
+| `SEARCH_MULTIPLIER` | 3                               | Search multiplier for retrieval   |
+| `USE_GPU`           | True                            | Enable GPU acceleration           |
+| `MOVIE_API`         | -                               | External movie API base URL       |
 
 ## Run the Project
 
@@ -146,12 +149,12 @@ API documentation: `http://127.0.0.1:8000/docs`
 
 ## API Endpoints
 
-| Endpoint                        | Method | Description                          |
-| ------------------------------- | ------ | ------------------------------------ |
-| `/`                             | GET    | Health check                         |
-| `/api/v1/movie/list`           | GET    | Get movie list from external API    |
-| `/api/v1/movie/history`        | GET    | Get user watch history (Bearer token) |
-| `/api/v1/movie/recommend`      | GET    | Get recommendations (param: `top_k`) |
+| Endpoint                  | Method | Description                           |
+| ------------------------- | ------ | ------------------------------------- |
+| `/`                       | GET    | Health check                          |
+| `/api/v1/movie/list`      | GET    | Get movie list from external API      |
+| `/api/v1/movie/history`   | GET    | Get user watch history (Bearer token) |
+| `/api/v1/movie/recommend` | GET    | Get recommendations (param: `top_k`)  |
 
 ### Example Request
 
@@ -204,3 +207,21 @@ curl -H "Authorization: Bearer YOUR_TOKEN" "http://127.0.0.1:8000/api/v1/movie/h
                      │   engagement)│    │             │
                      └──────────────┘    └─────────────┘
 ```
+
+## Key Components
+
+### Services Layer
+
+- **recommender.py**: Uses FAISS index to find similar movies based on user profile vector
+- **user_profiling.py**: Builds weighted user profile from watch history using sentence embeddings
+- **catalog_service.py**: Manages FAISS index building and caching for movie catalog
+
+### ML Layer
+
+- **model_loader.py**: Loads SentenceTransformer model with GPU/CPU auto-detection
+- **embeddings.py**: Utilities for generating movie embeddings
+
+### Utils
+
+- **text.py**: HTML parsing and content string builder for movie metadata
+- **engagement.py**: Computes engagement score based on watch behavior (times watched, completion, recency)
