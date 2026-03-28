@@ -21,10 +21,15 @@ def recommend_from_history(user_vec, catalog, history_list, top_k=5):
 
     watched_ids = {item["movie"]["id"] for item in history_list}
 
+    search_k = top_k * 3
     scores, indices = index.search(
         user_vec.reshape(1, -1).astype("float32"),
-        top_k * 3
+        search_k
     )
+
+    print(f"[recommend] catalog size: {len(catalog)}")
+    print(f"[recommend] watched movies: {len(watched_ids)}")
+    print(f"[recommend] FAISS searched top_k={search_k}, got {len(indices[0])} candidates")
 
     catalog_by_id = {m["id"]: m for m in catalog}
 

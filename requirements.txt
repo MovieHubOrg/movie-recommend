@@ -7,3 +7,6 @@ beautifulsoup4
 torch
 faiss-cpu
 pydantic
+requests
+python-dotenv
+xmltodict

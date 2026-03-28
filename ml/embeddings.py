@@ -43,14 +43,5 @@ def generate_movie_embeddings(movies: list[dict], batch_size: int = 64) -> tuple
     """
     contents = [build_content_string(m) for m in movies]
     ids = [m["id"] for m in movies]
-
-    embeddings = model.encode(
-        contents,
-        batch_size=batch_size,
-        convert_to_numpy=True,
-        show_progress_bar=True
-    )
-
-    embeddings = normalize(embeddings)
-
+    embeddings = generate_embeddings(contents, batch_size=batch_size)
     return embeddings, ids

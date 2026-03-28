@@ -6,9 +6,10 @@ import faiss
 from sklearn.preprocessing import normalize
 from ml.model_loader import model
 from utils.text import build_content_string
+from core.config import settings
 
-CACHE_FILE = "./models/catalog_embeddings.npz"
-INDEX_FILE = "./models/catalog_faiss.index"
+CACHE_FILE = settings.embeddings_cache
+INDEX_FILE = settings.index_file
 
 
 def build_catalog_index(catalog: list):

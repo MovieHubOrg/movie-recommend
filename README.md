@@ -7,23 +7,20 @@ A content-based movie recommendation API built with FastAPI. The system recommen
 ```
 movie-recommend/
 ├── app.py                      # FastAPI application entry point
-├── mock_data.py                # Sample movie catalog and watch history
 ├── requirements.txt            # Python dependencies
 ├── README.md                   # This file
 │
-├── api/                        # API layer (routes & schemas)
+├── api/                        # API layer
 │   ├── __init__.py
-│   ├── schemas.py              # Pydantic models for request/response
 │   └── routes/
-│       ├── __init__.py         # Main router (combines sub-routers)
-│       ├── movies.py           # GET /api/v1/movies endpoints
-│       └── recommendations.py  # GET /api/v1/movie/recommend
+│       ├── __init__.py         # Main router
+│       └── movie.py            # Movie & recommendation endpoints
 │
 ├── services/                   # Business logic layer
 │   ├── __init__.py
 │   ├── recommender.py          # recommend_from_history() - FAISS search
 │   ├── user_profiling.py       # build_user_profile() - weighted embeddings
-│   └── catalog_service.py      # build/load FAISS index & cache
+│   └── catalog_service.py     # build/load FAISS index & cache
 │
 ├── ml/                         # ML components
 │   ├── __init__.py
@@ -61,6 +58,24 @@ movie-recommend/
    - `modifiedDate` - recency decay (weight: 0.3)
 4. **Catalog Index**: Pre-builds FAISS index (FlatIP) for fast inner product search
 5. **Recommendation**: Searches FAISS index for top-k similar movies, excludes watched
+6. **External API Integration**: The system proxies requests to an external movie API, handling authentication via Bearer tokens and converting XML error responses to JSON format
+
+## External API Integration
+
+The system integrates with an external movie API for fetching movie catalog and user watch history. The following environment variable must be configured:
+
+- `MOVIE_API`: Base URL of the external movie API
+
+Optionally, you can pass a Bearer token via the `Authorization` header for authenticated endpoints.
+
+When the API returns a 401 Unauthorized error, the response is:
+
+```json
+{
+  "result": false,
+  "message": "Missing Authorization header"
+}
+```
 
 ## Setup
 
@@ -97,23 +112,27 @@ beautifulsoup4
 torch
 faiss-cpu
 pydantic
+requests
+python-dotenv
+xmltodict
 ```
 
 ## Configuration
 
 Environment variables (optional, defaults in `core/config.py`):
 
-| Variable            | Default                     | Description                       |
-| ------------------- | --------------------------- | --------------------------------- |
-| `APP_NAME`          | Movie Recommend API         | Application title                 |
-| `DEBUG`             | False                       | Enable debug mode                 |
-| `MODEL_NAME`        | all-MiniLM-L6-v2            | Sentence transformer model        |
-| `CACHE_FOLDER`      | ./models                    | Model cache directory             |
-| `INDEX_FILE`        | ./models/catalog_faiss.index| FAISS index file path             |
-| `EMBEDDINGS_CACHE`  | ./models/catalog_embeddings.npz | Cached embeddings file       |
-| `DEFAULT_TOP_K`     | 5                           | Default number of recommendations |
-| `SEARCH_MULTIPLIER` | 3                           | Search multiplier for retrieval   |
-| `USE_GPU`           | True                        | Enable GPU acceleration           |
+| Variable              | Default                     | Description                       |
+| --------------------- | --------------------------- | --------------------------------- |
+| `APP_NAME`            | Movie Recommend API        | Application title                 |
+| `DEBUG`               | False                       | Enable debug mode                 |
+| `MODEL_NAME`          | all-MiniLM-L6-v2            | Sentence transformer model        |
+| `CACHE_FOLDER`        | ./models                    | Model cache directory             |
+| `INDEX_FILE`          | ./models/catalog_faiss.index| FAISS index file path             |
+| `EMBEDDINGS_CACHE`   | ./models/catalog_embeddings.npz | Cached embeddings file       |
+| `DEFAULT_TOP_K`       | 5                           | Default number of recommendations |
+| `SEARCH_MULTIPLIER`   | 3                           | Search multiplier for retrieval   |
+| `USE_GPU`             | True                        | Enable GPU acceleration           |
+| `MOVIE_API`           | -                           | External movie API base URL       |
 
 ## Run the Project
 
@@ -127,34 +146,37 @@ API documentation: `http://127.0.0.1:8000/docs`
 
 ## API Endpoints
 
-| Endpoint                   | Method | Description                          |
-| -------------------------- | ------ | ------------------------------------ |
-| `/`                        | GET    | Health check                         |
-| `/api/v1/movies`           | GET    | Get all movies in catalog            |
-| `/api/v1/movies/histories` | GET    | Get user watch history               |
-| `/api/v1/movie/recommend`  | GET    | Get recommendations (param: `top_k`) |
+| Endpoint                        | Method | Description                          |
+| ------------------------------- | ------ | ------------------------------------ |
+| `/`                             | GET    | Health check                         |
+| `/api/v1/movie/list`           | GET    | Get movie list from external API    |
+| `/api/v1/movie/history`        | GET    | Get user watch history (Bearer token) |
+| `/api/v1/movie/recommend`      | GET    | Get recommendations (param: `top_k`) |
 
 ### Example Request
 
 ```bash
-curl "http://127.0.0.1:8000/api/v1/movie/recommend?top_k=5"
+# Get movie recommendations (requires Bearer token)
+curl -H "Authorization: Bearer YOUR_TOKEN" "http://127.0.0.1:8000/api/v1/movie/recommend?top_k=5"
+
+# Get movie list from external API
+curl "http://127.0.0.1:8000/api/v1/movie/list"
+
+# Get watch history from external API (requires Bearer token)
+curl -H "Authorization: Bearer YOUR_TOKEN" "http://127.0.0.1:8000/api/v1/movie/history"
 ```
 
 ### Example Response
 
 ```json
 {
+  "result": true,
+  "message": "Get recommend list successfully",
   "data": [
     {
       "id": 8961782939090944,
       "title": "Kaiju No. 8",
       "similarity": 0.8723,
-      ...
-    },
-    {
-      "id": 8998635757764608,
-      "title": "Tôi thăng cấp một mình",
-      "similarity": 0.8451,
       ...
     }
   ]
