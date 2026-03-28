@@ -3,7 +3,7 @@ import numpy as np
 from typing import Union
 from sklearn.preprocessing import normalize
 
-from ml.model_loader import model
+from ml.embeddings import generate_embeddings
 from utils.text import build_content_string
 from utils.engagement import compute_engagement_score
 
@@ -31,11 +31,7 @@ def build_user_profile(history_list: list) -> Union[np.ndarray, None]:
     if not contents:
         return None
 
-    embeddings = model.encode(
-        contents,
-        batch_size=32,
-        convert_to_numpy=True
-    )
+    embeddings = generate_embeddings(contents, batch_size=32)
 
     weights = np.array(weights)
     weight_sum = weights.sum()

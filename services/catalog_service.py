@@ -4,8 +4,7 @@ import numpy as np
 import faiss
 
 from sklearn.preprocessing import normalize
-from ml.model_loader import model
-from utils.text import build_content_string
+from ml.embeddings import generate_movie_embeddings
 from core.config import settings
 
 CACHE_FILE = settings.embeddings_cache
@@ -24,14 +23,7 @@ def build_catalog_index(catalog: list):
     """
     print(f"Encoding {len(catalog)} movies...")
 
-    contents = [build_content_string(m) for m in catalog]
-
-    embeddings = model.encode(
-        contents,
-        batch_size=64,
-        convert_to_numpy=True,
-        show_progress_bar=True
-    )
+    embeddings, _ = generate_movie_embeddings(catalog, batch_size=64)
 
     embeddings = normalize(embeddings).astype("float32")
 
@@ -43,6 +35,7 @@ def build_catalog_index(catalog: list):
 
     # CPU index
     cpu_index = faiss.IndexFlatIP(dim)
+    cpu_index.add(embeddings)
 
     # Try GPU
     try:
@@ -53,12 +46,12 @@ def build_catalog_index(catalog: list):
         index = cpu_index
         print("Using FAISS CPU")
 
-    index.add(embeddings)
-
     # save CPU version
     faiss.write_index(cpu_index, INDEX_FILE)
 
     print("Catalog index built")
+
+    return index
 
 
 def load_catalog_index(catalog=None):
@@ -76,10 +69,12 @@ def load_catalog_index(catalog=None):
     Raises:
         Exception: If index not found and catalog not provided
     """
-    if not os.path.exists(INDEX_FILE):
+    if not os.path.exists(INDEX_FILE) or not os.path.exists(CACHE_FILE):
         if catalog is None:
             raise Exception("Index not found. Need catalog to build.")
-        build_catalog_index(catalog)
+        index = build_catalog_index(catalog)
+        cache = np.load(CACHE_FILE, allow_pickle=True)
+        return index, cache["vecs"], cache["ids"].tolist()
 
     index = faiss.read_index(INDEX_FILE)
 
