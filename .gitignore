@@ -177,3 +177,4 @@ pyrightconfig.json
 /draft
 /models
 /.claude
+/qdrant_data

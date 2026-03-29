@@ -1,6 +1,5 @@
 """Embedding generation utilities."""
 import numpy as np
-from sklearn.preprocessing import normalize
 
 from ml.model_loader import model
 from utils.text import build_content_string
@@ -22,10 +21,8 @@ def generate_embeddings(texts: list[str], batch_size: int = 32, normalize_vecs: 
         texts,
         batch_size=batch_size,
         convert_to_numpy=True,
+        normalize_embeddings=True
     )
-
-    if normalize_vecs:
-        embeddings = normalize(embeddings)
 
     return embeddings
 

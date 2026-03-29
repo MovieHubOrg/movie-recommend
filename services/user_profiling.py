@@ -1,7 +1,6 @@
 """User profile building service."""
 import numpy as np
 from typing import Union
-from sklearn.preprocessing import normalize
 
 from ml.embeddings import generate_embeddings
 from utils.text import build_content_string
@@ -42,4 +41,4 @@ def build_user_profile(history_list: list) -> Union[np.ndarray, None]:
 
     user_vec = np.average(embeddings, axis=0, weights=weights)
 
-    return normalize(user_vec.reshape(1, -1))[0]
+    return user_vec

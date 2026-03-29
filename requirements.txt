@@ -5,9 +5,9 @@ scikit-learn
 sentence-transformers
 beautifulsoup4
 torch
-faiss-cpu
 pydantic
 requests
 python-dotenv
 xmltodict
 pytest
+qdrant-client

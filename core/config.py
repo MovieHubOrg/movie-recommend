@@ -1,6 +1,5 @@
 """Application configuration."""
 import os
-from typing import Optional
 
 
 class Settings:
@@ -25,6 +24,9 @@ class Settings:
 
         # Movie API
         self.movie_api: str = os.getenv("MOVIE_API")
+
+        # Qdrant Settings
+        self.qdrant_path: str = os.getenv("QDRANT_PATH")
 
     @property
     def use_gpu(self) -> bool:

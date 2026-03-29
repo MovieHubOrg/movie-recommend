@@ -1,7 +1,8 @@
 """Recommendation service."""
-from services.catalog_service import load_catalog_index
+from services.catalog_service import load_catalog_index, search_by_vector
+import time
 
-def recommend_from_history(user_vec, catalog, history_list, top_k=5):
+def recommend_from_history(user_vec, catalog, history_list, client, top_k=5):
     """
     Generate movie recommendations based on user profile and watch history.
 
@@ -9,6 +10,7 @@ def recommend_from_history(user_vec, catalog, history_list, top_k=5):
         user_vec: User profile vector
         catalog: List of movie catalogs
         history_list: List of watched movie history items
+        client: QdrantClient instance
         top_k: Number of recommendations to return
 
     Returns:
@@ -16,41 +18,34 @@ def recommend_from_history(user_vec, catalog, history_list, top_k=5):
     """
     if user_vec is None:
         return []
-    index, vecs, ids = load_catalog_index(catalog)
+
+    load_catalog_index(catalog, client)
 
     watched_ids = {item["movie"]["id"] for item in history_list}
 
     search_k = top_k * 3
-    scores, indices = index.search(
-        user_vec.reshape(1, -1).astype("float32"),
-        search_k
-    )
+    start_time = time.time()
+    results = search_by_vector(user_vec, search_k, client)
+    print(f"[recommend] Qdrant search time: {time.time() - start_time}s")
 
     print(f"[recommend] catalog size: {len(catalog)}")
     print(f"[recommend] watched movies: {len(watched_ids)}")
-    print(f"[recommend] FAISS searched top_k={search_k}, got {len(indices[0])} candidates")
+    print(f"[recommend] Qdrant searched top_k={search_k}, got {len(results)} candidates")
 
-    catalog_by_id = {m["id"]: m for m in catalog}
+    recommendations = []
 
-    results = []
-
-    for i, idx in enumerate(indices[0]):
-        movie_id = ids[idx]
+    for r in results:
+        movie_id = r["id"]
 
         if movie_id in watched_ids:
             continue
 
-        movie = catalog_by_id.get(movie_id)
+        movie = r["payload"].copy()
+        movie["similarity"] = r["score"]
 
-        if not movie:
-            continue
+        recommendations.append(movie)
 
-        movie = movie.copy()
-        movie["similarity"] = float(scores[0][i])
-
-        results.append(movie)
-
-        if len(results) >= top_k:
+        if len(recommendations) >= top_k:
             break
 
-    return results
+    return recommendations

@@ -1,86 +1,124 @@
 """Catalog index and embedding management service."""
-import os
+import uuid
 import numpy as np
-import faiss
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams, PointStruct
 
-from sklearn.preprocessing import normalize
 from ml.embeddings import generate_movie_embeddings
-from core.config import settings
 
-CACHE_FILE = settings.embeddings_cache
-INDEX_FILE = settings.index_file
+COLLECTION_NAME = "movies"
 
 
-def build_catalog_index(catalog: list):
+def _int_to_uuid(int_id: int) -> str:
+    """Convert integer ID to UUID string."""
+    return str(uuid.UUID(int=int_id))
+
+
+def _uuid_to_int(uuid_str: str) -> int:
+    """Convert UUID string back to integer ID."""
+    return uuid.UUID(uuid_str).int
+
+
+def build_catalog_index(catalog: list, client: QdrantClient):
     """
-    Build FAISS index for movie catalog.
+    Build Qdrant index for movie catalog.
 
     Creates embeddings for all movies and builds a searchable index.
-    Supports GPU acceleration if available.
 
     Args:
         catalog: List of movie dictionaries
+        client: QdrantClient instance
     """
     print(f"Encoding {len(catalog)} movies...")
+    print(f"[build] catalog[0] keys: {list(catalog[0].keys()) if catalog else 'empty'}")
+    print(f"[build] catalog[0] id: {catalog[0].get('id') if catalog else 'N/A'}")
 
-    embeddings, _ = generate_movie_embeddings(catalog, batch_size=64)
+    embeddings, movie_ids = generate_movie_embeddings(catalog, batch_size=64)
+    print(f"[build] embeddings shape: {embeddings.shape}, movie_ids: {movie_ids[:3]}")
 
-    embeddings = normalize(embeddings).astype("float32")
+    embeddings = embeddings.astype("float32")
 
-    ids = np.array([m["id"] for m in catalog])
-
-    np.savez(CACHE_FILE, vecs=embeddings, ids=ids)
+    if client.collection_exists(COLLECTION_NAME):
+        client.delete_collection(collection_name=COLLECTION_NAME)
 
     dim = embeddings.shape[1]
+    client.create_collection(
+        collection_name=COLLECTION_NAME,
+        vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+    )
 
-    # CPU index
-    cpu_index = faiss.IndexFlatIP(dim)
-    cpu_index.add(embeddings)
+    points = [
+        PointStruct(id=_int_to_uuid(int(m["id"])), vector=embeddings[i].tolist(), payload=m)
+        for i, m in enumerate(catalog)
+    ]
+    print(f"[build] points to upsert: {len(points)}, first id: {points[0].id}")
 
-    # Try GPU
-    try:
-        res = faiss.StandardGpuResources()
-        index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
-        print("Using FAISS GPU")
-    except Exception:
-        index = cpu_index
-        print("Using FAISS CPU")
-
-    # save CPU version
-    faiss.write_index(cpu_index, INDEX_FILE)
+    client.upsert(collection_name=COLLECTION_NAME, points=points)
 
     print("Catalog index built")
 
-    return index
 
-
-def load_catalog_index(catalog=None):
+def load_catalog_index(catalog=None, client: QdrantClient = None):
     """
-    Load FAISS index and cached embeddings.
+    Load Qdrant index.
 
     Builds the index if it doesn't exist.
 
     Args:
         catalog: Optional catalog to build index if not found
+        client: QdrantClient instance (required)
 
     Returns:
-        Tuple of (faiss index, embeddings array, movie IDs list)
+        QdrantClient instance
 
     Raises:
         Exception: If index not found and catalog not provided
     """
-    if not os.path.exists(INDEX_FILE) or not os.path.exists(CACHE_FILE):
+    if client is None:
+        raise Exception("QdrantClient is required")
+
+    should_rebuild = False
+    
+    if not client.collection_exists(COLLECTION_NAME):
+        should_rebuild = True
+    else:
+        info = client.get_collection(collection_name=COLLECTION_NAME)
+        if info.points_count == 0:
+            should_rebuild = True
+            client.delete_collection(collection_name=COLLECTION_NAME)
+    
+    if should_rebuild:
         if catalog is None:
             raise Exception("Index not found. Need catalog to build.")
-        index = build_catalog_index(catalog)
-        cache = np.load(CACHE_FILE, allow_pickle=True)
-        return index, cache["vecs"], cache["ids"].tolist()
+        build_catalog_index(catalog, client)
 
-    index = faiss.read_index(INDEX_FILE)
+    return client
 
-    cache = np.load(CACHE_FILE, allow_pickle=True)
 
-    vecs = cache["vecs"]
-    ids = cache["ids"].tolist()
+def search_by_vector(query_vector: np.ndarray, top_k: int, client: QdrantClient):
+    """
+    Search Qdrant index by query vector.
 
-    return index, vecs, ids
+    Args:
+        query_vector: Query embedding vector
+        top_k: Number of results to return
+        client: QdrantClient instance
+
+    Returns:
+        List of search results with id and score
+    """
+    print(f"[search] query_vector shape: {query_vector.shape}, norm: {np.linalg.norm(query_vector)}")
+    print(f"[search] collection exists: {client.collection_exists(COLLECTION_NAME)}")
+    
+    if client.collection_exists(COLLECTION_NAME):
+        info = client.get_collection(collection_name=COLLECTION_NAME)
+        print(f"[search] points count: {info.points_count}")
+
+    results = client.query_points(
+        collection_name=COLLECTION_NAME,
+        query=query_vector.tolist(),
+        limit=top_k,
+        with_payload=True,
+    ).points
+
+    return [{"id": r.id, "score": r.score, "payload": r.payload} for r in results]

@@ -1,6 +1,6 @@
 # Movie Recommendation System
 
-A content-based movie recommendation API built with FastAPI. The system recommends movies based on user watch history using sentence embeddings and FAISS for efficient similarity search.
+A content-based movie recommendation API built with FastAPI. The system recommends movies based on user watch history using sentence embeddings and Qdrant vector database for efficient similarity search.
 
 ## Project Structure
 
@@ -19,29 +19,27 @@ movie-recommend/
 │
 ├── services/                   # Business logic layer
 │   ├── __init__.py
-│   ├── recommender.py          # recommend_from_history() - FAISS search
-│   ├── user_profiling.py       # build_user_profile() - weighted embeddings
-│   └── catalog_service.py     # build/load FAISS index & cache
+│   ├── recommender.py          # recommend_from_history() - Qdrant search
+│   ├── user_profiling.py      # build_user_profile() - weighted embeddings
+│   └── catalog_service.py    # build/load Qdrant index
 │
 ├── ml/                         # ML components
 │   ├── __init__.py
-│   ├── model_loader.py         # SentenceTransformer (GPU/CPU)
-│   └── embeddings.py           # Embedding generation utilities
+│   ├── model_loader.py        # SentenceTransformer (GPU/CPU)
+│   └── embeddings.py          # Embedding generation utilities
 │
 ├── utils/                      # Utility functions
 │   ├── __init__.py
-│   ├── text.py                 # HTML parsing, content string builder
-│   └── engagement.py           # Engagement score calculation
+│   ├── text.py                # HTML parsing, content string builder
+│   └── engagement.py         # Engagement score calculation
 │
-├── core/                       # Configuration
+├── core/                      # Configuration
 │   ├── __init__.py
-│   └── config.py               # Settings from environment variables
+│   └── config.py            # Settings from environment variables
 │
-├── models/                     # ML artifacts (gitignored)
-│   ├── catalog_embeddings.npz  # Cached movie embeddings
-│   └── catalog_faiss.index     # FAISS index for similarity search
+├── qdrant_data/               # Qdrant vector database (auto-created)
 │
-└── tests/                      # Test suite
+└── tests/                     # Test suite
     └── __init__.py
 ```
 
@@ -59,25 +57,15 @@ The system recommends movies based on user watch history using content-based fil
    - `timesWatched` - rewatch count (weight: 0.5)
    - `lastWatchSeconds / duration` - completion percentage (weight: 1.0)
    - `modifiedDate` - recency decay (weight: 0.3)
-4. **Catalog Index**: Pre-builds FAISS index (FlatIP) for fast inner product search
-5. **Recommendation**: Searches FAISS index for top-k similar movies, excludes watched
+4. **Catalog Index**: Builds Qdrant collection with cosine distance for similarity search
+5. **Recommendation**: Searches Qdrant for top-k similar movies, excludes already watched
 
 ## External API Integration
 
-The system integrates with an external movie API for fetching movie catalog and user watch history. The following environment variable must be configured:
+The system integrates with an external movie API for fetching movie catalog and user watch history:
 
 - `MOVIE_API`: Base URL of the external movie API
-
-Optionally, you can pass a Bearer token via the `Authorization` header for authenticated endpoints.
-
-When the API returns a 401 Unauthorized error, the response is:
-
-```json
-{
-  "result": false,
-  "message": "Missing Authorization header"
-}
-```
+- `Authorization` header (Bearer token) for authenticated endpoints
 
 ## Setup
 
@@ -86,13 +74,12 @@ When the API returns a 401 Unauthorized error, the response is:
 ### Create Virtual Environment
 
 ```bash
-# Create venv
 py -3.11 -m venv venv
 
-# Activate on Windows
+# Windows
 venv\Scripts\activate
 
-# Activate on macOS/Linux
+# macOS/Linux
 source venv/bin/activate
 ```
 
@@ -100,7 +87,6 @@ source venv/bin/activate
 
 ```bash
 pip install -r requirements.txt
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
 ## Requirements
@@ -113,29 +99,29 @@ scikit-learn
 sentence-transformers
 beautifulsoup4
 torch
-faiss-cpu
 pydantic
 requests
 python-dotenv
 xmltodict
+pytest
+qdrant-client
 ```
 
 ## Configuration
 
 Environment variables (optional, defaults in `core/config.py`):
 
-| Variable            | Default                         | Description                       |
-| ------------------- | ------------------------------- | --------------------------------- |
-| `APP_NAME`          | Movie Recommend API             | Application title                 |
-| `DEBUG`             | False                           | Enable debug mode                 |
-| `MODEL_NAME`        | all-MiniLM-L6-v2                | Sentence transformer model        |
-| `CACHE_FOLDER`      | ./models                        | Model cache directory             |
-| `INDEX_FILE`        | ./models/catalog_faiss.index    | FAISS index file path             |
-| `EMBEDDINGS_CACHE`  | ./models/catalog_embeddings.npz | Cached embeddings file            |
-| `DEFAULT_TOP_K`     | 5                               | Default number of recommendations |
-| `SEARCH_MULTIPLIER` | 3                               | Search multiplier for retrieval   |
-| `USE_GPU`           | True                            | Enable GPU acceleration           |
-| `MOVIE_API`         | -                               | External movie API base URL       |
+| Variable            | Default             | Description                     |
+| -------------------| -------------------| ------------------------------ |
+| `APP_NAME`          | Movie Recommend API | Application title              |
+| `DEBUG`            | False              | Enable debug mode               |
+| `MODEL_NAME`       | all-MiniLM-L6-v2  | Sentence transformer model      |
+| `CACHE_FOLDER`     | ./models           | Model cache directory            |
+| `QDRANT_PATH`      | ./qdrant_data     | Qdrant database path            |
+| `DEFAULT_TOP_K`   | 5                 | Default recommendations count    |
+| `SEARCH_MULTIPLIER`| 3                 | Search multiplier             |
+| `USE_GPU`          | True              | Enable GPU acceleration       |
+| `MOVIE_API`        | -                 | External movie API URL       |
 
 ## Run the Project
 
@@ -143,33 +129,26 @@ Environment variables (optional, defaults in `core/config.py`):
 uvicorn app:app --reload
 ```
 
-Server runs at: `http://127.0.0.1:8000`
-
-API documentation: `http://127.0.0.1:8000/docs`
+Server: `http://127.0.0.1:8000`  
+Docs: `http://127.0.0.1:8000/docs`
 
 ## API Endpoints
 
-| Endpoint                  | Method | Description                           |
-| ------------------------- | ------ | ------------------------------------- |
-| `/`                       | GET    | Health check                          |
-| `/api/v1/movie/list`      | GET    | Get movie list from external API      |
-| `/api/v1/movie/history`   | GET    | Get user watch history (Bearer token) |
-| `/api/v1/movie/recommend` | GET    | Get recommendations (param: `top_k`)  |
+| Endpoint                  | Method | Description                      |
+| ------------------------- | ------ | -------------------------------- |
+| `/`                       | GET    | Health check                     |
+| `/api/v1/movie/list`      | GET    | Get movie list from external API|
+| `/api/v1/movie/history`  | GET    | Get watch history (Bearer token)   |
+| `/api/v1/movie/recommend` | GET    | Get recommendations                |
 
-### Example Request
+### Example
 
 ```bash
-# Get movie recommendations (requires Bearer token)
+# Get recommendations (requires Bearer token)
 curl -H "Authorization: Bearer YOUR_TOKEN" "http://127.0.0.1:8000/api/v1/movie/recommend?top_k=5"
-
-# Get movie list from external API
-curl "http://127.0.0.1:8000/api/v1/movie/list"
-
-# Get watch history from external API (requires Bearer token)
-curl -H "Authorization: Bearer YOUR_TOKEN" "http://127.0.0.1:8000/api/v1/movie/history"
 ```
 
-### Example Response
+### Response
 
 ```json
 {
@@ -178,9 +157,8 @@ curl -H "Authorization: Bearer YOUR_TOKEN" "http://127.0.0.1:8000/api/v1/movie/h
   "data": [
     {
       "id": 8961782939090944,
-      "title": "Kaiju No. 8",
-      "similarity": 0.8723,
-      ...
+      "title": "Movie Title",
+      "similarity": 0.8723
     }
   ]
 }
@@ -189,39 +167,25 @@ curl -H "Authorization: Bearer YOUR_TOKEN" "http://127.0.0.1:8000/api/v1/movie/h
 ## Architecture
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   Client    │────▶│  FastAPI     │────▶│  Services   │
-│             │     │  (app.py)    │     │  Layer      │
-└─────────────┘     └──────────────┘     └─────────────┘
-                           │                    │
-                           │                    ▼
-                           │            ┌─────────────┐
-                           │            │   ML        │
-                           │            │  (model)    │
-                           │            └─────────────┘
-                           │                    │
-                           ▼                    ▼
-                     ┌──────────────┐    ┌─────────────┐
-                     │   Utils      │    │   FAISS     │
-                     │   (text,     │    │   Index     │
-                     │   engagement)│    │             │
-                     └──────────────┘    └─────────────┘
+Client ──▶ FastAPI ──▶ Services ──▶ Qdrant
+              │           │
+              │           ├─▶ ML (SentenceTransformer)
+              │           └─▶ Utils (text, engagement)
+              │
+              └─▶ External Movie API
 ```
 
 ## Key Components
 
 ### Services Layer
-
-- **recommender.py**: Uses FAISS index to find similar movies based on user profile vector
-- **user_profiling.py**: Builds weighted user profile from watch history using sentence embeddings
-- **catalog_service.py**: Manages FAISS index building and caching for movie catalog
+- **recommender.py**: Qdrant vector search for similar movies
+- **user_profiling.py**: Weighted user profile from watch history
+- **catalog_service.py**: Qdrant index management
 
 ### ML Layer
-
-- **model_loader.py**: Loads SentenceTransformer model with GPU/CPU auto-detection
-- **embeddings.py**: Utilities for generating movie embeddings
+- **model_loader.py**: SentenceTransformer loader (GPU/CPU)
+- **embeddings.py**: Movie embedding generation
 
 ### Utils
-
-- **text.py**: HTML parsing and content string builder for movie metadata
-- **engagement.py**: Computes engagement score based on watch behavior (times watched, completion, recency)
+- **text.py**: HTML parsing, content string builder
+- **engagement.py**: Engagement score calculation
