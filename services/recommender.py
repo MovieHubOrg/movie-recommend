@@ -1,49 +1,55 @@
 """Recommendation service."""
-from services.catalog_service import load_catalog_index, search_by_vector
+import uuid
+import numpy as np
+from services.catalog_service import search_by_vector
 import time
+from core.config import settings
 
-def recommend_from_history(user_vec, catalog, history_list, client, top_k=5):
+
+def recommend_by_movie_ids(movie_ids: list, client, top_k=settings.default_top_k):
     """
-    Generate movie recommendations based on user profile and watch history.
+    Generate movie recommendations based on a list of movie IDs.
 
     Args:
-        user_vec: User profile vector
-        catalog: List of movie catalogs
-        history_list: List of watched movie history items
+        movie_ids: List of movie ID strings
         client: QdrantClient instance
         top_k: Number of recommendations to return
 
     Returns:
-        List of recommended movies with similarity scores
+        List of recommended movie IDs
     """
-    if user_vec is None:
+    if not movie_ids:
         return []
 
-    load_catalog_index(catalog, client)
+    qdrant_ids = [str(uuid.UUID(int=int(mid))) for mid in movie_ids]
 
-    watched_ids = {item["movie"]["id"] for item in history_list}
+    points = client.retrieve(collection_name="movies", ids=qdrant_ids, with_payload=True, with_vectors=True)
 
-    search_k = top_k * 3
+    if not points:
+        return []
+
+    vectors = np.array([p.vector for p in points])
+    user_vec = np.mean(vectors, axis=0)
+
+    exclude_ids = set(qdrant_ids)
+
+    search_k = top_k * settings.search_multiplier
     start_time = time.time()
     results = search_by_vector(user_vec, search_k, client)
-    print(f"[recommend] Qdrant search time: {time.time() - start_time}s")
+    print(f"[recommend-by-movies] Qdrant search time: {time.time() - start_time}s")
 
-    print(f"[recommend] catalog size: {len(catalog)}")
-    print(f"[recommend] watched movies: {len(watched_ids)}")
-    print(f"[recommend] Qdrant searched top_k={search_k}, got {len(results)} candidates")
+    print(f"[recommend-by-movies] input movies: {len(movie_ids)}")
+    print(f"[recommend-by-movies] Qdrant searched top_k={search_k}, got {len(results)} candidates")
 
     recommendations = []
 
     for r in results:
         movie_id = r["id"]
 
-        if movie_id in watched_ids:
+        if movie_id in exclude_ids:
             continue
 
-        movie = r["payload"].copy()
-        movie["similarity"] = r["score"]
-
-        recommendations.append(movie)
+        recommendations.append(str(uuid.UUID(movie_id).int))
 
         if len(recommendations) >= top_k:
             break

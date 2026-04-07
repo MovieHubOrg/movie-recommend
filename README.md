@@ -1,191 +1,123 @@
 # Movie Recommendation System
 
-A content-based movie recommendation API built with FastAPI. The system recommends movies based on user watch history using sentence embeddings and Qdrant vector database for efficient similarity search.
+A content-based movie recommendation API built with **FastAPI**, using **Sentence Transformer** embeddings and **Qdrant** vector database for efficient similarity search.
+
+## Overview
+
+Given a list of movie IDs, the system returns the most similar movies based on content metadata (title, description, genres, countries, year). It works by:
+
+1. **Startup** — fetches the full movie catalog from an external API and builds a Qdrant vector index. A hash of the catalog is saved on disk; if the catalog changes on next startup, the index is automatically rebuilt.
+2. **Embedding generation** — each movie's metadata is combined into a single text string and embedded via `all-MiniLM-L6-v2`.
+3. **Recommendation** — vectors of the input movie IDs are retrieved, averaged into a query vector, and used to search Qdrant for the most similar movies (excluding the inputs themselves).
+
+## Architecture
+
+```
+Client ──▶ FastAPI ──▶ Services ──▶ Qdrant Vector DB
+              │           │
+              │           └─▶ SentenceTransformer embeddings
+              │
+              └─▶ External Movie API (startup only)
+```
 
 ## Project Structure
 
 ```
 movie-recommend/
-├── app.py                      # FastAPI application entry point
-├── requirements.txt            # Python dependencies
-├── .env                        # Environment variables
-├── README.md                   # This file
+├── app.py                     # FastAPI entry point + lifespan
+├── requirements.txt           # Python dependencies
+├── .env                       # Environment variables
 │
-├── api/                        # API layer
-│   ├── __init__.py
-│   └── routes/
-│       ├── __init__.py         # Main router
-│       └── movie.py            # Movie & recommendation endpoints
+├── api/routes/
+│   └── movie.py               # /recommend-by-movies endpoint
 │
-├── services/                   # Business logic layer
-│   ├── __init__.py
-│   ├── recommender.py          # recommend_from_history() - Qdrant search
-│   ├── user_profiling.py      # build_user_profile() - weighted embeddings
-│   └── catalog_service.py    # build/load Qdrant index
+├── services/
+│   ├── recommender.py          # Vector search & averaging logic
+│   └── catalog_service.py      # Catalog index build / load
 │
-├── ml/                         # ML components
-│   ├── __init__.py
-│   ├── model_loader.py        # SentenceTransformer (GPU/CPU)
-│   └── embeddings.py          # Embedding generation utilities
+├── ml/
+│   ├── model_loader.py         # SentenceTransformer (auto GPU/CPU)
+│   └── embeddings.py           # Embedding utilities
 │
-├── utils/                      # Utility functions
-│   ├── __init__.py
-│   ├── text.py                # HTML parsing, content string builder
-│   └── engagement.py         # Engagement score calculation
+├── utils/
+│   └── text.py                 # HTML parsing, content builder
 │
-├── core/                      # Configuration
-│   ├── __init__.py
-│   └── config.py            # Settings from environment variables
+├── core/
+│   └── config.py               # Settings from env vars
 │
 ├── qdrant_data/               # Qdrant vector database (auto-created)
 │
 └── tests/                     # Test suite
-    └── __init__.py
 ```
-
-## How It Works
-
-The system recommends movies based on user watch history using content-based filtering:
-
-1. **Model Loading**: Loads `all-MiniLM-L6-v2` sentence transformer with GPU/CPU auto-detection
-2. **User Profile Building**:
-   - Extracts movie metadata (title, description, categories, country, year)
-   - Converts to text content string
-   - Generates embeddings using the model
-   - Computes weighted average based on engagement scores
-3. **Engagement Score**: Calculates user preference weight based on:
-   - `timesWatched` - rewatch count (weight: 0.5)
-   - `lastWatchSeconds / duration` - completion percentage (weight: 1.0)
-   - `modifiedDate` - recency decay (weight: 0.3)
-4. **Catalog Index**: Builds Qdrant collection with cosine distance for similarity search
-5. **Recommendation**: Searches Qdrant for top-k similar movies, excludes already watched
-
-## External API Integration
-
-The system integrates with an external movie API for fetching movie catalog and user watch history:
-
-- `MOVIE_API`: Base URL of the external movie API
-- `Authorization` header (Bearer token) for authenticated endpoints
 
 ## Setup
 
 **Requires Python 3.11**
 
-### Create Virtual Environment
-
 ```bash
 py -3.11 -m venv venv
+venv\Scripts\activate          # Windows
+# source venv/bin/activate     # macOS/Linux
 
-# Windows
-venv\Scripts\activate
-
-# macOS/Linux
-source venv/bin/activate
-```
-
-### Install Dependencies
-
-```bash
 pip install -r requirements.txt
 ```
 
-## Requirements
+### Configuration
 
-```
-fastapi
-uvicorn
-numpy
-scikit-learn
-sentence-transformers
-beautifulsoup4
-torch
-pydantic
-requests
-python-dotenv
-xmltodict
-pytest
-qdrant-client
-```
+Environment variables (defaults in `core/config.py`):
 
-## Configuration
+| Variable            | Default             | Description                   |
+| ------------------- | ------------------- | ----------------------------- |
+| `APP_NAME`          | Movie Recommend API | Application title             |
+| `DEBUG`             | False               | Enable debug mode             |
+| `MODEL_NAME`        | all-MiniLM-L6-v2    | Sentence transformer model    |
+| `CACHE_FOLDER`      | ./models            | Model cache directory         |
+| `QDRANT_PATH`       | ./qdrant_data       | Qdrant database path          |
+| `DEFAULT_TOP_K`     | 5                   | Default recommendations count |
+| `SEARCH_MULTIPLIER` | 3                   | Search multiplier             |
+| `MOVIE_API`         | -                   | External movie API URL        |
 
-Environment variables (optional, defaults in `core/config.py`):
-
-| Variable            | Default             | Description                     |
-| -------------------| -------------------| ------------------------------ |
-| `APP_NAME`          | Movie Recommend API | Application title              |
-| `DEBUG`            | False              | Enable debug mode               |
-| `MODEL_NAME`       | all-MiniLM-L6-v2  | Sentence transformer model      |
-| `CACHE_FOLDER`     | ./models           | Model cache directory            |
-| `QDRANT_PATH`      | ./qdrant_data     | Qdrant database path            |
-| `DEFAULT_TOP_K`   | 5                 | Default recommendations count    |
-| `SEARCH_MULTIPLIER`| 3                 | Search multiplier             |
-| `USE_GPU`          | True              | Enable GPU acceleration       |
-| `MOVIE_API`        | -                 | External movie API URL       |
-
-## Run the Project
+## Run
 
 ```bash
 uvicorn app:app --reload
 ```
 
-Server: `http://127.0.0.1:8000`  
-Docs: `http://127.0.0.1:8000/docs`
+Server: `http://127.0.0.1:8000`
+Swagger docs: `http://127.0.0.1:8000/docs`
 
 ## API Endpoints
 
-| Endpoint                  | Method | Description                      |
-| ------------------------- | ------ | -------------------------------- |
-| `/`                       | GET    | Health check                     |
-| `/api/v1/movie/list`      | GET    | Get movie list from external API|
-| `/api/v1/movie/history`  | GET    | Get watch history (Bearer token)   |
-| `/api/v1/movie/recommend` | GET    | Get recommendations                |
+| Endpoint                                     | Method | Description                      |
+| -------------------------------------------- | ------ | -------------------------------- |
+| `/`                                          | GET    | Health check                     |
+| `/api/v1/movie/recommend-by-movies`          | GET    | Get recommendations by movie IDs |
 
-### Example
+### Recommend by Movie IDs
 
 ```bash
-# Get recommendations (requires Bearer token)
-curl -H "Authorization: Bearer YOUR_TOKEN" "http://127.0.0.1:8000/api/v1/movie/recommend?top_k=5"
+curl "http://127.0.0.1:8000/api/v1/movie/recommend-by-movies?movieIds=1,2,3&top_k=5"
 ```
 
-### Response
+**Query Parameters:**
+
+| Parameter  | Type   | Required | Default | Description               |
+| ---------- | ------ | -------- | ------- | ------------------------- |
+| `movieIds` | string | Yes      | -       | Comma-separated movie IDs |
+| `top_k`    | int    | No       | 5       | Number of recommendations |
+
+**Response:**
 
 ```json
 {
   "result": true,
   "message": "Get recommend list successfully",
-  "data": [
-    {
-      "id": 8961782939090944,
-      "title": "Movie Title",
-      "similarity": 0.8723
-    }
-  ]
+  "data": ["8961782939090944", "1234567890123456", "9876543210987654"]
 }
 ```
 
-## Architecture
+## Tests
 
+```bash
+pytest tests/
 ```
-Client ──▶ FastAPI ──▶ Services ──▶ Qdrant
-              │           │
-              │           ├─▶ ML (SentenceTransformer)
-              │           └─▶ Utils (text, engagement)
-              │
-              └─▶ External Movie API
-```
-
-## Key Components
-
-### Services Layer
-- **recommender.py**: Qdrant vector search for similar movies
-- **user_profiling.py**: Weighted user profile from watch history
-- **catalog_service.py**: Qdrant index management
-
-### ML Layer
-- **model_loader.py**: SentenceTransformer loader (GPU/CPU)
-- **embeddings.py**: Movie embedding generation
-
-### Utils
-- **text.py**: HTML parsing, content string builder
-- **engagement.py**: Engagement score calculation

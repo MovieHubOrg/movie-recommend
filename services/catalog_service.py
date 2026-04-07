@@ -1,12 +1,16 @@
 """Catalog index and embedding management service."""
+import hashlib
+import json
 import uuid
 import numpy as np
+from pathlib import Path
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 
 from ml.embeddings import generate_movie_embeddings
 
 COLLECTION_NAME = "movies"
+CATALOG_HASH_FILE = Path(__file__).parent.parent / "qdrant_data" / "catalog_hash.json"
 
 
 def _int_to_uuid(int_id: int) -> str:
@@ -14,9 +18,26 @@ def _int_to_uuid(int_id: int) -> str:
     return str(uuid.UUID(int=int_id))
 
 
-def _uuid_to_int(uuid_str: str) -> int:
-    """Convert UUID string back to integer ID."""
-    return uuid.UUID(uuid_str).int
+def _compute_catalog_hash(catalog: list) -> str:
+    """Compute a hash of the catalog based on sorted movie IDs."""
+    ids = sorted(str(m["id"]) for m in catalog)
+    return hashlib.md5(",".join(ids).encode()).hexdigest()
+
+
+def _load_stored_hash() -> str:
+    """Load previously stored catalog hash."""
+    if CATALOG_HASH_FILE.exists():
+        with open(CATALOG_HASH_FILE) as f:
+            data = json.load(f)
+            return data.get("hash", "")
+    return ""
+
+
+def _store_hash(catalog_hash: str):
+    """Store catalog hash to disk."""
+    CATALOG_HASH_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(CATALOG_HASH_FILE, "w") as f:
+        json.dump({"hash": catalog_hash}, f)
 
 
 def build_catalog_index(catalog: list, client: QdrantClient):
@@ -55,6 +76,8 @@ def build_catalog_index(catalog: list, client: QdrantClient):
 
     client.upsert(collection_name=COLLECTION_NAME, points=points)
 
+    _store_hash(_compute_catalog_hash(catalog))
+
     print("Catalog index built")
 
 
@@ -62,7 +85,7 @@ def load_catalog_index(catalog=None, client: QdrantClient = None):
     """
     Load Qdrant index.
 
-    Builds the index if it doesn't exist.
+    Builds the index if it doesn't exist or if the catalog has changed.
 
     Args:
         catalog: Optional catalog to build index if not found
@@ -86,6 +109,13 @@ def load_catalog_index(catalog=None, client: QdrantClient = None):
         if info.points_count == 0:
             should_rebuild = True
             client.delete_collection(collection_name=COLLECTION_NAME)
+        elif catalog is not None:
+            current_hash = _compute_catalog_hash(catalog)
+            stored_hash = _load_stored_hash()
+            if current_hash != stored_hash:
+                print(f"[catalog] hash mismatch, rebuilding index (stored: {stored_hash}, current: {current_hash})")
+                should_rebuild = True
+                client.delete_collection(collection_name=COLLECTION_NAME)
     
     if should_rebuild:
         if catalog is None:

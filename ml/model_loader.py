@@ -1,13 +1,7 @@
 from sentence_transformers import SentenceTransformer
 import torch
+from core.config import settings
 
-
-def get_device() -> str:
-    """Get available device (cuda or cpu)."""
-    return "cuda" if torch.cuda.is_available() else "cpu"
-
-
-# Global model instance
-device = get_device()
+device = "cuda" if torch.cuda.is_available() else "cpu"
 print("Device:", device)
-model = SentenceTransformer("all-MiniLM-L6-v2", cache_folder="./models", device=device)
+model = SentenceTransformer(settings.model_name, cache_folder=settings.cache_folder, device=device)

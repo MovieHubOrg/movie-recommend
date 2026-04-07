@@ -1,3 +1,3 @@
-from .model_loader import model, get_device
+from .model_loader import model
 
-__all__ = ["model", "get_device"]
+__all__ = ["model"]
