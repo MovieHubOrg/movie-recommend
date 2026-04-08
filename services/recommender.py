@@ -1,5 +1,4 @@
 """Recommendation service."""
-import uuid
 import numpy as np
 from services.catalog_service import search_by_vector
 import time
@@ -21,7 +20,7 @@ def recommend_by_movie_ids(movie_ids: list, client, top_k=settings.default_top_k
     if not movie_ids:
         return []
 
-    qdrant_ids = [str(uuid.UUID(int=int(mid))) for mid in movie_ids]
+    qdrant_ids = [int(mid) for mid in movie_ids]
 
     points = client.retrieve(collection_name="movies", ids=qdrant_ids, with_payload=True, with_vectors=True)
 
@@ -37,20 +36,15 @@ def recommend_by_movie_ids(movie_ids: list, client, top_k=settings.default_top_k
     start_time = time.time()
     results = search_by_vector(user_vec, search_k, client)
     print(f"[recommend-by-movies] Qdrant search time: {time.time() - start_time}s")
-
-    print(f"[recommend-by-movies] input movies: {len(movie_ids)}")
-    print(f"[recommend-by-movies] Qdrant searched top_k={search_k}, got {len(results)} candidates")
+    print(f"[recommend-by-movies] input movies: {len(movie_ids)}, candidates: {len(results)}")
 
     recommendations = []
 
     for r in results:
-        movie_id = r["id"]
-
+        movie_id = r["id"] 
         if movie_id in exclude_ids:
             continue
-
-        recommendations.append(str(uuid.UUID(movie_id).int))
-
+        recommendations.append(str(movie_id))
         if len(recommendations) >= top_k:
             break
 

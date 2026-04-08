@@ -1,7 +1,6 @@
 """Catalog index and embedding management service."""
 import hashlib
 import json
-import uuid
 import numpy as np
 from pathlib import Path
 from qdrant_client import QdrantClient
@@ -11,11 +10,6 @@ from ml.embeddings import generate_movie_embeddings
 
 COLLECTION_NAME = "movies"
 CATALOG_HASH_FILE = Path(__file__).parent.parent / "qdrant_data" / "catalog_hash.json"
-
-
-def _int_to_uuid(int_id: int) -> str:
-    """Convert integer ID to UUID string."""
-    return str(uuid.UUID(int=int_id))
 
 
 def _compute_catalog_hash(catalog: list) -> str:
@@ -28,8 +22,7 @@ def _load_stored_hash() -> str:
     """Load previously stored catalog hash."""
     if CATALOG_HASH_FILE.exists():
         with open(CATALOG_HASH_FILE) as f:
-            data = json.load(f)
-            return data.get("hash", "")
+            return json.load(f).get("hash", "")
     return ""
 
 
@@ -62,14 +55,13 @@ def build_catalog_index(catalog: list, client: QdrantClient):
     if client.collection_exists(COLLECTION_NAME):
         client.delete_collection(collection_name=COLLECTION_NAME)
 
-    dim = embeddings.shape[1]
     client.create_collection(
         collection_name=COLLECTION_NAME,
-        vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+        vectors_config=VectorParams(size=embeddings.shape[1], distance=Distance.COSINE),
     )
 
     points = [
-        PointStruct(id=_int_to_uuid(int(m["id"])), vector=embeddings[i].tolist(), payload=m)
+        PointStruct(id=int(m["id"]), vector=embeddings[i].tolist(), payload=m)
         for i, m in enumerate(catalog)
     ]
     print(f"[build] points to upsert: {len(points)}, first id: {points[0].id}")
