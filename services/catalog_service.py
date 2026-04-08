@@ -3,84 +3,56 @@ import os
 import numpy as np
 import faiss
 
-from sklearn.preprocessing import normalize
-from ml.embeddings import generate_movie_embeddings
 from core.config import settings
 
 CACHE_FILE = settings.embeddings_cache
 INDEX_FILE = settings.index_file
 
-
-def build_catalog_index(catalog: list):
-    """
-    Build FAISS index for movie catalog.
-
-    Creates embeddings for all movies and builds a searchable index.
-    Supports GPU acceleration if available.
-
-    Args:
-        catalog: List of movie dictionaries
-    """
-    print(f"Encoding {len(catalog)} movies...")
-
-    embeddings, _ = generate_movie_embeddings(catalog, batch_size=64)
-
-    embeddings = normalize(embeddings).astype("float32")
-
-    ids = np.array([m["id"] for m in catalog])
-
-    np.savez(CACHE_FILE, vecs=embeddings, ids=ids)
-
-    dim = embeddings.shape[1]
-
-    # CPU index
-    cpu_index = faiss.IndexFlatIP(dim)
-    cpu_index.add(embeddings)
-
-    # Try GPU
-    try:
-        res = faiss.StandardGpuResources()
-        index = faiss.index_cpu_to_gpu(res, 0, cpu_index)
-        print("Using FAISS GPU")
-    except Exception:
-        index = cpu_index
-        print("Using FAISS CPU")
-
-    # save CPU version
-    faiss.write_index(cpu_index, INDEX_FILE)
-
-    print("Catalog index built")
-
-    return index
+# Cached index and data
+_index_cache = {
+    "index": None,
+    "vecs": None,
+    "ids": None
+}
 
 
-def load_catalog_index(catalog=None):
+def load_catalog_index():
     """
     Load FAISS index and cached embeddings.
-
-    Builds the index if it doesn't exist.
-
-    Args:
-        catalog: Optional catalog to build index if not found
 
     Returns:
         Tuple of (faiss index, embeddings array, movie IDs list)
 
     Raises:
-        Exception: If index not found and catalog not provided
+        Exception: If index not found (run sync first)
     """
+    # Return cached if available
+    if _index_cache["index"] is not None:
+        return _index_cache["index"], _index_cache["vecs"], _index_cache["ids"]
+    
     if not os.path.exists(INDEX_FILE) or not os.path.exists(CACHE_FILE):
-        if catalog is None:
-            raise Exception("Index not found. Need catalog to build.")
-        index = build_catalog_index(catalog)
-        cache = np.load(CACHE_FILE, allow_pickle=True)
-        return index, cache["vecs"], cache["ids"].tolist()
+        raise Exception("Index not found. Run catalog sync first.")
 
     index = faiss.read_index(INDEX_FILE)
-
     cache = np.load(CACHE_FILE, allow_pickle=True)
-
     vecs = cache["vecs"]
     ids = cache["ids"].tolist()
+    
+    # Cache for subsequent calls
+    _index_cache["index"] = index
+    _index_cache["vecs"] = vecs
+    _index_cache["ids"] = ids
 
     return index, vecs, ids
+
+
+def reload_catalog_index():
+    """Force reload index from disk (after sync)."""
+    global _index_cache
+    _index_cache = {"index": None, "vecs": None, "ids": None}
+    return load_catalog_index()
+
+
+def is_index_ready() -> bool:
+    """Check if catalog index is available."""
+    return os.path.exists(INDEX_FILE) and os.path.exists(CACHE_FILE)

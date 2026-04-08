@@ -193,28 +193,39 @@ class TestUserProfiling:
 
 class TestRecommender:
     def test_none_user_vec(self):
-        result = recommend_from_history(None, [], [])
+        result = recommend_from_history(None, [])
         assert result == []
 
-    def test_empty_catalog(self):
+    @patch('services.recommender.load_catalog_index')
+    def test_empty_catalog(self, mock_load_index):
         import numpy as np
+        import faiss
+        # Create empty index
+        dim = 384
+        index = faiss.IndexFlatIP(dim)
+        mock_load_index.return_value = (index, np.array([]), [])
+        
         user_vec = np.zeros(384)
-        result = recommend_from_history(user_vec, [], [])
+        result = recommend_from_history(user_vec, [])
         assert result == []
 
-    def test_excludes_watched_movies(self):
+    @patch('services.recommender.load_catalog_index')
+    def test_excludes_watched_movies(self, mock_load_index):
         import numpy as np
-        user_vec = np.zeros(384)
-        catalog = [
-            {"id": 1, "title": "Movie 1"},
-            {"id": 2, "title": "Movie 2"},
-            {"id": 3, "title": "Movie 3"}
-        ]
+        import faiss
+        # Create index with 3 movies
+        dim = 384
+        index = faiss.IndexFlatIP(dim)
+        vecs = np.random.rand(3, dim).astype('float32')
+        index.add(vecs)
+        mock_load_index.return_value = (index, vecs, [1, 2, 3])
+        
+        user_vec = np.random.rand(384).astype('float32')
         history = [
             {"movie": {"id": 1}},
             {"movie": {"id": 2}}
         ]
-        result = recommend_from_history(user_vec, catalog, history, top_k=5)
+        result = recommend_from_history(user_vec, history, top_k=5)
         watched_ids = {item["movie"]["id"] for item in history}
         for movie in result:
             assert movie["id"] not in watched_ids
@@ -251,23 +262,20 @@ class TestMovieRoutes:
     @patch('api.routes.movie.settings')
     def test_get_movie_client_without_token(self, mock_settings):
         mock_settings.movie_api = "http://test.com"
-        client_class = get_movie_client()
-        client = client_class()
+        client = get_movie_client()
         assert client.token == ""
         assert client.base_url == "http://test.com"
 
     @patch('api.routes.movie.settings')
     def test_get_movie_client_with_bearer_token(self, mock_settings):
         mock_settings.movie_api = "http://test.com"
-        client_class = get_movie_client("Bearer mytoken")
-        client = client_class()
+        client = get_movie_client("Bearer mytoken")
         assert client.token == "mytoken"
 
     @patch('api.routes.movie.settings')
     def test_get_movie_client_with_invalid_bearer(self, mock_settings):
         mock_settings.movie_api = "http://test.com"
-        client_class = get_movie_client("Basic token")
-        client = client_class()
+        client = get_movie_client("Basic token")
         assert client.token == ""
 
 
